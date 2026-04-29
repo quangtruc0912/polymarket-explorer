@@ -281,6 +281,7 @@ function ElonTweetsTab() {
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("markets");
+  const [elonMounted, setElonMounted] = useState(false);
 
   const [allMarkets, setAllMarkets] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -428,7 +429,7 @@ export default function Home() {
         </button>
         <button
           className={`tab-btn${activeTab === "elon-tweets" ? " active" : ""}`}
-          onClick={() => setActiveTab("elon-tweets")}
+          onClick={() => { setActiveTab("elon-tweets"); setElonMounted(true); }}
         >
           Elon Tweets
         </button>
@@ -656,7 +657,11 @@ export default function Home() {
       )}
 
       {/* ── Elon Tweets Tab ── */}
-      {activeTab === "elon-tweets" && <ElonTweetsTab />}
+      {elonMounted && (
+        <div style={{ display: activeTab === "elon-tweets" ? "block" : "none" }}>
+          <ElonTweetsTab />
+        </div>
+      )}
     </div>
   );
 }

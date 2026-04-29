@@ -1,56 +1,81 @@
-import { readFileSync, readdirSync } from "fs";
-import { join } from "path";
+import { unstable_cache } from "next/cache";
 
-// Weeks are anchored to Tue 16:00 UTC (noon EDT) matching Polymarket's tracking periods.
-// Anchor = 2026-04-28T16:00:00Z. Each week = [anchor - (n+1)*7d, anchor - n*7d).
+const XTRACKER_BASE = "https://xtracker.polymarket.com/api";
+const ELON_HANDLE   = "elonmusk";
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36",
+  "Accept":     "application/json",
+  "Referer":    "https://xtracker.polymarket.com/",
+  "Origin":     "https://xtracker.polymarket.com",
+};
+
 const ANCHOR_MS = new Date("2026-04-28T16:00:00.000Z").getTime();
 const WEEK_MS   = 7 * 24 * 60 * 60 * 1000;
 
-// Returns the ISO date string of the week-start that contains the given timestamp.
-// Week-start is always a Tuesday at 16:00 UTC.
 function getWeekKey(iso) {
   const t = new Date(iso).getTime();
   const diffMs = ANCHOR_MS - t;
-  if (diffMs <= 0) {
-    // At or after anchor → belongs to the anchor week (starts 2026-04-28)
-    return new Date(ANCHOR_MS).toISOString().slice(0, 10);
-  }
+  if (diffMs <= 0) return new Date(ANCHOR_MS).toISOString().slice(0, 10);
   const n = Math.floor(diffMs / WEEK_MS);
-  // Week n starts at ANCHOR_MS - (n+1)*WEEK_MS
   return new Date(ANCHOR_MS - (n + 1) * WEEK_MS).toISOString().slice(0, 10);
 }
 
-// The display end-date for a week is the date of the NEXT week's boundary
-// (matching Polymarket's "April 21 – April 28" format).
 function weekEndDate(startKey) {
-  const startMs = new Date(startKey + "T16:00:00.000Z").getTime();
-  return new Date(startMs + WEEK_MS).toISOString().slice(0, 10);
+  const ms = new Date(startKey + "T16:00:00.000Z").getTime();
+  return new Date(ms + WEEK_MS).toISOString().slice(0, 10);
 }
 
-export async function GET() {
-  try {
-    const cwd = process.cwd();
-    const files = readdirSync(cwd)
-      .filter((f) => f.startsWith("elon-xtracker-") && f.endsWith(".json"))
-      .sort()
-      .reverse();
+async function xtrackerFetch(path) {
+  const r = await fetch(`${XTRACKER_BASE}${path}`, { headers: HEADERS });
+  if (!r.ok) throw new Error(`xtracker ${path} → HTTP ${r.status}`);
+  const json = await r.json();
+  return json.success ? json.data : null;
+}
 
-    if (!files.length) {
-      return Response.json(
-        { error: "No elon-xtracker-*.json file found in project root. Download it first." },
-        { status: 404 }
-      );
+async function fetchAllPosts() {
+  const seen = new Set();
+  const all  = [];
+  let endDate = null;
+
+  for (let page = 0; page < 100; page++) {
+    const url = new URL(`${XTRACKER_BASE}/users/${ELON_HANDLE}/posts`);
+    if (endDate) url.searchParams.set("endDate", endDate);
+
+    const r = await fetch(url.toString(), { headers: HEADERS });
+    if (!r.ok) break;
+
+    const json  = await r.json();
+    const batch = json.success && Array.isArray(json.data) ? json.data : [];
+    if (batch.length === 0) break;
+
+    for (const post of batch) {
+      if (!seen.has(post.id)) { seen.add(post.id); all.push(post); }
     }
+    if (batch.length < 500) break;
 
-    const raw = JSON.parse(readFileSync(join(cwd, files[0]), "utf8"));
-    const { posts, profile } = raw;
+    const oldest = batch.reduce((min, p) => p.createdAt < min ? p.createdAt : min, batch[0].createdAt);
+    const next = new Date(new Date(oldest).getTime() - 1).toISOString();
+    if (next === endDate) break;
+    endDate = next;
+  }
 
-    // ── Bucket every post into its week ────────────────────────────────────────
-    const weekMap = {};
-    const dowCounts  = Array(7).fill(0); // 0=Sun … 6=Sat
+  all.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+  return all;
+}
+
+// ── Cached computation — runs at most once every 6 hours globally ─────────────
+// Vercel stores this result in its shared Data Cache across all instances.
+const getElonStats = unstable_cache(
+  async () => {
+    const [profile, posts] = await Promise.all([
+      xtrackerFetch(`/users/${ELON_HANDLE}`),
+      fetchAllPosts(),
+    ]);
+
+    const weekMap    = {};
+    const dowCounts  = Array(7).fill(0);
     const hourCounts = Array(24).fill(0);
-    let rtCount    = 0;
-    let replyCount = 0;
+    let rtCount = 0, replyCount = 0;
 
     for (const p of posts) {
       const key = getWeekKey(p.createdAt);
@@ -60,11 +85,10 @@ export async function GET() {
       dowCounts[dt.getUTCDay()]++;
       hourCounts[dt.getUTCHours()]++;
 
-      if (p.content?.startsWith("RT @")) rtCount++;
-      else if (p.content?.startsWith("@")) replyCount++;
+      if (p.content?.startsWith("RT @"))       rtCount++;
+      else if (p.content?.startsWith("@"))     replyCount++;
     }
 
-    // ── Build sorted weekly array (oldest → newest) ────────────────────────────
     const sortedKeys = Object.keys(weekMap).sort();
     const weekly = sortedKeys.map((key, i) => {
       const count = weekMap[key];
@@ -78,23 +102,17 @@ export async function GET() {
       };
     });
 
-    const counts  = weekly.map((w) => w.count);
-    const peakIdx = counts.indexOf(Math.max(...counts));
+    const peakIdx = weekly.reduce((mi, w, i) => w.count > weekly[mi].count ? i : mi, 0);
 
-    // Day-of-week in Tue→Mon order (matching the week anchor day)
     const DOW_LABELS = ["Tue", "Wed", "Thu", "Fri", "Sat", "Sun", "Mon"];
     const DOW_IDX    = [2, 3, 4, 5, 6, 0, 1];
-    const dayOfWeek  = DOW_LABELS.map((label, i) => ({ day: label, count: dowCounts[DOW_IDX[i]] }));
 
-    const hourly = hourCounts.map((count, h) => ({ hour: h, count }));
-
-    return Response.json({
-      dataFile:  files[0],
-      fetchedAt: raw.fetchedAt,
+    return {
+      cachedAt: new Date().toISOString(),
       profile: {
-        name:       profile?.name       ?? "Elon Musk",
-        handle:     profile?.handle     ?? "elonmusk",
-        avatarUrl:  profile?.avatarUrl  ?? null,
+        name:       profile?.name      ?? "Elon Musk",
+        handle:     profile?.handle    ?? "elonmusk",
+        avatarUrl:  profile?.avatarUrl ?? null,
         totalPosts: profile?._count?.posts ?? posts.length,
       },
       summary: {
@@ -111,9 +129,20 @@ export async function GET() {
         replies:  replyCount,
       },
       weekly,
-      dayOfWeek,
-      hourly,
-    });
+      dayOfWeek: DOW_LABELS.map((label, i) => ({ day: label, count: dowCounts[DOW_IDX[i]] })),
+      hourly:    hourCounts.map((count, h) => ({ hour: h, count })),
+    };
+  },
+  ["elon-stats"],          // cache key
+  { revalidate: 21600 }   // 6 hours
+);
+
+export const dynamic = "force-dynamic";
+
+export async function GET() {
+  try {
+    const data = await getElonStats();
+    return Response.json(data);
   } catch (err) {
     return Response.json({ error: err.message }, { status: 500 });
   }
