@@ -185,6 +185,16 @@ td { padding: 10px 14px; vertical-align: middle; }
   border: 1px solid var(--border);
   white-space: nowrap;
 }
+.outcome-badge.outcome-yes {
+  background: rgba(63, 185, 80, 0.12);
+  color: var(--green);
+  border-color: rgba(63, 185, 80, 0.3);
+}
+.outcome-badge.outcome-no {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--red);
+  border-color: rgba(248, 81, 73, 0.3);
+}
 
 /* Volume */
 .vol { color: var(--green); font-size: 13px; white-space: nowrap; }
@@ -207,3 +217,33 @@ td { padding: 10px 14px; vertical-align: middle; }
 /* Empty */
 .empty { padding: 48px; text-align: center; color: var(--muted); }
 .empty p { margin-top: 8px; font-size: 13px; }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Elon Tweets tab — bracket pills in the All Brackets column */
+.bracket-pill {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
