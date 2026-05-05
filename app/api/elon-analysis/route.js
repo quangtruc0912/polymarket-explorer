@@ -2,6 +2,7 @@ import { syncPosts } from "../../../lib/elonPosts";
 import { syncAnalysis, analyzeWeek } from "../../../lib/elonAnalysis";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request) {
   if (!process.env.ANTHROPIC_API_KEY) {
