@@ -4,3 +4,6 @@ node_modules/
 *.log
 
 .vercel
+
+# cached tweet data
+data/elon-posts.json
