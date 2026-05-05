@@ -2,8 +2,10 @@
 node_modules/
 .vercel/
 *.log
+.env.local
 
 .vercel
 
 # cached tweet data
 data/elon-posts.json
+data/elon-analysis.json

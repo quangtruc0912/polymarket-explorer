@@ -89,6 +89,37 @@ function ElonTweetsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [rowStates, setRowStates] = useState({});
+
+  async function loadAnalysis() {
+    setAnalysisLoading(true);
+    try {
+      const res = await fetch("/api/elon-analysis");
+      const json = await res.json();
+      if (!json.error) setAnalysis(json);
+    } catch {}
+    finally { setAnalysisLoading(false); }
+  }
+
+  async function askWhyWeek(weekKey) {
+    setRowStates(prev => ({ ...prev, [weekKey]: { loading: true, reason: null } }));
+    try {
+      const res  = await fetch(`/api/elon-analysis?week=${weekKey}`);
+      const json = await res.json();
+      const reason = json.reason ?? null;
+      setRowStates(prev => ({ ...prev, [weekKey]: { loading: false, reason } }));
+      if (reason) {
+        setAnalysis(prev => prev
+          ? { ...prev, analyses: { ...prev.analyses, [weekKey]: reason } }
+          : { analyses: { [weekKey]: reason } }
+        );
+      }
+    } catch {
+      setRowStates(prev => ({ ...prev, [weekKey]: { loading: false, reason: null } }));
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -105,7 +136,7 @@ function ElonTweetsTab() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadAnalysis(); }, []);
 
   if (loading) {
     return (
@@ -129,6 +160,10 @@ function ElonTweetsTab() {
   const { summary, weekly, contentTypes, dayOfWeek, profile, dataFile } = data;
   const maxWeek = Math.max(...weekly.map((w) => w.count));
   const maxDow  = Math.max(...dayOfWeek.map((d) => d.count));
+
+  const avgPerWeek     = summary.avgPerWeek;
+  const highThreshold  = Math.round(avgPerWeek * 1.5);
+  const lowThreshold   = Math.round(avgPerWeek * 0.5);
 
   function weekColor(count) {
     const r = count / maxWeek;
@@ -241,13 +276,26 @@ function ElonTweetsTab() {
               <th>Week (Mon – Sun)</th>
               <th style={{ textAlign: "right" }}>Tweets</th>
               <th style={{ textAlign: "right" }}>vs Prev</th>
-              <th style={{ minWidth: 120 }}>Volume</th>
+              <th style={{ minWidth: 100 }}>Volume</th>
+              <th style={{ minWidth: 260 }}>
+                Why
+                {analysisLoading && (
+                  <span style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>
+                    <span className="loading-dot" /> analyzing…
+                  </span>
+                )}
+              </th>
             </tr>
           </thead>
           <tbody>
             {[...weekly].reverse().map((w) => {
-              const color = weekColor(w.count);
-              const pct = Math.round((w.count / maxWeek) * 100);
+              const color   = weekColor(w.count);
+              const pct     = Math.round((w.count / maxWeek) * 100);
+              const isHigh   = w.count >= highThreshold;
+              const isLow    = w.count <= lowThreshold;
+              const notable  = isHigh || isLow;
+              const reason   = analysis?.analyses?.[w.startDate] ?? rowStates[w.startDate]?.reason;
+              const rowLoading = rowStates[w.startDate]?.loading;
               return (
                 <tr key={w.startDate}>
                   <td style={{ color: "var(--muted)", fontSize: 12 }}>{w.weekNum}</td>
@@ -266,6 +314,57 @@ function ElonTweetsTab() {
                     <div style={{ background: "var(--border)", borderRadius: 2, height: 6 }}>
                       <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2 }} />
                     </div>
+                  </td>
+                  <td style={{ fontSize: 12, maxWidth: 400 }}>
+                    {reason ? (
+                      <span style={{ color: "var(--fg)" }}>
+                        {notable && (
+                          <span style={{
+                            display: "inline-block",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 5px",
+                            borderRadius: 3,
+                            marginRight: 6,
+                            background: isHigh ? "rgba(63,185,80,0.15)" : "rgba(88,166,255,0.15)",
+                            color: isHigh ? "#3fb950" : "#58a6ff",
+                          }}>
+                            {isHigh ? "HIGH" : "LOW"}
+                          </span>
+                        )}
+                        {reason}
+                      </span>
+                    ) : rowLoading ? (
+                      <span style={{ color: "var(--muted)", fontStyle: "italic", fontSize: 12 }}>
+                        <span className="loading-dot" /> asking Claude…
+                      </span>
+                    ) : analysisLoading ? (
+                      <span style={{ color: "var(--muted)", fontStyle: "italic", fontSize: 12 }}>
+                        {notable && (
+                          <span style={{
+                            display: "inline-block",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 5px",
+                            borderRadius: 3,
+                            marginRight: 6,
+                            background: isHigh ? "rgba(63,185,80,0.15)" : "rgba(88,166,255,0.15)",
+                            color: isHigh ? "#3fb950" : "#58a6ff",
+                          }}>
+                            {isHigh ? "HIGH" : "LOW"}
+                          </span>
+                        )}
+                        analyzing…
+                      </span>
+                    ) : (
+                      <button
+                        className="btn"
+                        style={{ fontSize: 11, padding: "2px 8px" }}
+                        onClick={() => askWhyWeek(w.startDate)}
+                      >
+                        Ask why
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
