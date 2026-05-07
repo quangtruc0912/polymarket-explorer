@@ -5,9 +5,12 @@ const WEEK_MS   = 7 * 24 * 60 * 60 * 1000;
 
 function getWeekKey(iso) {
   const t      = new Date(iso).getTime();
-  const diffMs = ANCHOR_MS - t;
-  if (diffMs <= 0) return new Date(ANCHOR_MS).toISOString().slice(0, 10);
-  const n = Math.floor(diffMs / WEEK_MS);
+  const diffMs = t - ANCHOR_MS;
+  if (diffMs >= 0) {
+    const n = Math.floor(diffMs / WEEK_MS);
+    return new Date(ANCHOR_MS + n * WEEK_MS).toISOString().slice(0, 10);
+  }
+  const n = Math.floor(-diffMs / WEEK_MS);
   return new Date(ANCHOR_MS - (n + 1) * WEEK_MS).toISOString().slice(0, 10);
 }
 
