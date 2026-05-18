@@ -121,11 +121,11 @@ function ElonTweetsTab() {
     }
   }
 
-  async function load() {
+  async function load(force = false) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/elon-stats");
+      const res = await fetch(force ? "/api/elon-stats?force=1" : "/api/elon-stats");
       const json = await res.json();
       if (json.error) throw new Error(json.error);
       setData(json);
@@ -190,7 +190,10 @@ function ElonTweetsTab() {
         <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "right", borderLeft: "1px solid var(--border)", paddingLeft: 14 }}>
           <div>Source: {dataFile}</div>
           <div>Fetched: {data.fetchedAt?.slice(0, 10)}</div>
-          <button className="btn" onClick={load} style={{ marginTop: 6, fontSize: 11, padding: "2px 10px" }}>Refresh</button>
+          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+            <button className="btn" onClick={() => load(false)} style={{ fontSize: 11, padding: "2px 10px" }}>Refresh</button>
+            <button className="btn" onClick={() => load(true)} style={{ fontSize: 11, padding: "2px 10px" }} title="Re-fetch last 4 weeks from xtracker">Force Sync</button>
+          </div>
         </div>
       </div>
 

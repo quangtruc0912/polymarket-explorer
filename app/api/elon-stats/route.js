@@ -22,9 +22,13 @@ function weekEndDate(startKey) {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function GET() {
+export async function GET(request) {
   try {
-    const { posts, newCount, totalCount, lastPostAt } = await syncPosts();
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get("force") === "1";
+    const { posts, newCount, totalCount, lastPostAt } = await syncPosts({
+      forceLookbackDays: force ? 28 : 0,
+    });
 
     const weekMap    = {};
     const dowCounts  = Array(7).fill(0);
